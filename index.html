@@ -6,6 +6,11 @@
     <title>Sri Lakshmi Saree Center - Credit Management</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+    
     <style>
         :root {
             --primary-color: #c41e3a;
@@ -520,6 +525,7 @@
 
         <div class="tabs">
             <button class="tab active" onclick="switchTab('dashboard')">📊 Dashboard</button>
+            <button class="tab" onclick="switchTab('search')">🔍 Search</button>
             <button class="tab" onclick="switchTab('customers')">👥 Customers</button>
             <button class="tab" onclick="switchTab('addSale')">🛍️ Add Sale</button>
             <button class="tab" onclick="switchTab('addPayment')">💰 Add Payment</button>
@@ -555,6 +561,17 @@
 
                 <h3 style="margin-top: 30px; margin-bottom: 15px; color: var(--primary-color);">⚠️ Customers with Outstanding Balance</h3>
                 <div id="outstandingCustomersList"></div>
+            </div>
+
+            <!-- Search Tab -->
+            <div id="search" class="tab-content">
+                <h2 style="margin-bottom: 25px; color: var(--primary-color);">🔍 Search Customer</h2>
+                
+                <div class="search-box">
+                    <input type="text" id="searchCustomerInput" placeholder="🔍 Search by name or phone number..." oninput="searchCustomer()">
+                </div>
+
+                <div id="searchResults"></div>
             </div>
 
             <!-- Customers Tab -->
@@ -707,29 +724,48 @@
             <div id="invoiceContent" class="invoice-content"></div>
             <div class="modal-actions">
                 <button class="btn btn-primary" onclick="downloadPDF()">📥 Download PDF</button>
-                <button class="btn btn-success" onclick="shareWhatsApp()">📱 Share via WhatsApp</button>
                 <button class="btn btn-secondary" onclick="window.print()">🖨️ Print</button>
             </div>
         </div>
     </div>
 
     <script>
+        // 🔹 Paste your Firebase config values here
+        const firebaseConfig = {
+            apiKey: "AIzaSyAEtIc_E57ep6Ii5VdY6ojCowID9q0@m~s",
+            authDomain: "creditmanagementsystem-5cb28.firebaseapp.com",
+            projectId: "creditmanagementsystem-5cb28",
+            storageBucket: "creditmanagementsystem-5cb28.appspot.com",
+            messagingSenderId: "815041719718",
+            appId: "1:815041719718:web:c77949e9ce14ccd2ceb367"
+        };
+
+        // 🔹 Initialize Firebase and Firestore
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        
+        console.log("✅ Firebase connected!");
+
         // Data Storage
         let customers = [];
         let transactions = [];
         let currentInvoiceCustomer = null;
+        let useFirebase = true;
 
         // Initialize with sample data
-        function initializeSampleData() {
-            const savedCustomers = localStorage.getItem('customers');
-            const savedTransactions = localStorage.getItem('transactions');
-            
-            if (savedCustomers) {
-                customers = JSON.parse(savedCustomers);
-            }
-            
-            if (savedTransactions) {
-                transactions = JSON.parse(savedTransactions);
+        async function initializeSampleData() {
+            // Load from Firebase
+            try {
+                const customersSnapshot = await db.collection('customers').get();
+                customers = customersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                const transactionsSnapshot = await db.collection('transactions').get();
+                transactions = transactionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                console.log('✅ Data loaded from Firebase:', customers.length, 'customers', transactions.length, 'transactions');
+            } catch (error) {
+                console.error('Error loading from Firebase:', error);
+                alert('Error connecting to database. Please check your internet connection and refresh.');
             }
             
             updateDashboard();
@@ -758,7 +794,7 @@
         }
 
         // Add Customer
-        function addCustomer() {
+        async function addCustomer() {
             const name = document.getElementById('newCustomerName').value.trim();
             const phone = document.getElementById('newCustomerPhone').value.trim();
             const address = document.getElementById('newCustomerAddress').value.trim();
@@ -774,15 +810,22 @@
             }
 
             const customer = {
-                id: Date.now(),
                 name: name,
                 phone: phone,
                 address: address,
                 createdDate: new Date().toISOString()
             };
 
-            customers.push(customer);
-            saveData();
+            try {
+                const docRef = await db.collection('customers').add(customer);
+                customer.id = docRef.id;
+                customers.push(customer);
+                console.log('✅ Customer added to Firebase:', customer.id);
+            } catch (error) {
+                console.error('Error adding to Firebase:', error);
+                alert('Error saving customer. Please check your internet connection.');
+                return;
+            }
             
             document.getElementById('newCustomerName').value = '';
             document.getElementById('newCustomerPhone').value = '';
@@ -795,7 +838,7 @@
         }
 
         // Add Sale
-        function addSale() {
+        async function addSale() {
             const customerId = document.getElementById('saleCustomer').value;
             const date = document.getElementById('saleDate').value;
             const description = document.getElementById('saleDescription').value.trim();
@@ -809,20 +852,27 @@
             }
 
             const transaction = {
-                id: Date.now(),
-                customerId: parseInt(customerId),
+                customerId: customerId,
                 type: 'sale',
                 date: date,
                 description: description,
-                quantity: qty,
+                quantity: parseInt(qty),
                 rate: parseFloat(rate) || 0,
                 amount: parseFloat(amount),
                 isPaid: false,
                 createdDate: new Date().toISOString()
             };
 
-            transactions.push(transaction);
-            saveData();
+            try {
+                const docRef = await db.collection('transactions').add(transaction);
+                transaction.id = docRef.id;
+                transactions.push(transaction);
+                console.log('✅ Sale added to Firebase:', transaction.id);
+            } catch (error) {
+                console.error('Error adding to Firebase:', error);
+                alert('Error saving sale. Please check your internet connection.');
+                return;
+            }
             
             document.getElementById('saleDescription').value = '';
             document.getElementById('saleQty').value = '1';
@@ -854,7 +904,7 @@
         }
 
         // Add Payment
-        function addPayment() {
+        async function addPayment() {
             const customerId = document.getElementById('paymentCustomer').value;
             const date = document.getElementById('paymentDate').value;
             const amount = parseFloat(document.getElementById('paymentAmount').value);
@@ -866,7 +916,7 @@
                 return;
             }
 
-            const customerBalance = calculateCustomerBalance(parseInt(customerId));
+            const customerBalance = calculateCustomerBalance(customerId);
             if (amount > customerBalance) {
                 if (!confirm(`Payment amount (₹${amount}) exceeds outstanding balance (₹${customerBalance}). Continue?`)) {
                     return;
@@ -874,8 +924,7 @@
             }
 
             const transaction = {
-                id: Date.now(),
-                customerId: parseInt(customerId),
+                customerId: customerId,
                 type: 'payment',
                 date: date,
                 amount: amount,
@@ -884,12 +933,19 @@
                 createdDate: new Date().toISOString()
             };
 
-            transactions.push(transaction);
-            
-            // Mark oldest unpaid sales as paid
-            markSalesAsPaid(parseInt(customerId), amount);
-            
-            saveData();
+            try {
+                const docRef = await db.collection('transactions').add(transaction);
+                transaction.id = docRef.id;
+                transactions.push(transaction);
+                console.log('✅ Payment added to Firebase:', transaction.id);
+                
+                // Mark oldest unpaid sales as paid
+                await markSalesAsPaid(customerId, amount);
+            } catch (error) {
+                console.error('Error adding to Firebase:', error);
+                alert('Error saving payment. Please check your internet connection.');
+                return;
+            }
             
             document.getElementById('paymentAmount').value = '';
             document.getElementById('paymentNotes').value = '';
@@ -900,7 +956,7 @@
         }
 
         // Mark Sales as Paid
-        function markSalesAsPaid(customerId, paymentAmount) {
+        async function markSalesAsPaid(customerId, paymentAmount) {
             const unpaidSales = transactions
                 .filter(t => t.customerId === customerId && t.type === 'sale' && !t.isPaid)
                 .sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -911,6 +967,17 @@
                 if (remainingAmount >= sale.amount) {
                     sale.isPaid = true;
                     sale.paidDate = document.getElementById('paymentDate').value;
+                    
+                    try {
+                        await db.collection('transactions').doc(sale.id).update({
+                            isPaid: true,
+                            paidDate: sale.paidDate
+                        });
+                        console.log('✅ Sale marked as paid:', sale.id);
+                    } catch (error) {
+                        console.error('Error updating Firebase:', error);
+                    }
+                    
                     remainingAmount -= sale.amount;
                 } else if (remainingAmount > 0) {
                     // Partial payment - create a new transaction for remaining
@@ -921,13 +988,34 @@
                     sale.paidDate = document.getElementById('paymentDate').value;
                     sale.amount = paidPortion;
                     
+                    try {
+                        await db.collection('transactions').doc(sale.id).update({
+                            isPaid: true,
+                            paidDate: sale.paidDate,
+                            amount: paidPortion
+                        });
+                        console.log('✅ Sale partially paid:', sale.id);
+                    } catch (error) {
+                        console.error('Error updating Firebase:', error);
+                    }
+                    
                     // Create new transaction for unpaid portion
-                    transactions.push({
+                    const newTransaction = {
                         ...sale,
-                        id: Date.now(),
                         amount: unpaidPortion,
                         isPaid: false
-                    });
+                    };
+                    delete newTransaction.id;
+                    delete newTransaction.paidDate;
+                    
+                    try {
+                        const docRef = await db.collection('transactions').add(newTransaction);
+                        newTransaction.id = docRef.id;
+                        transactions.push(newTransaction);
+                        console.log('✅ Remaining sale amount added:', newTransaction.id);
+                    } catch (error) {
+                        console.error('Error adding to Firebase:', error);
+                    }
                     
                     remainingAmount = 0;
                     break;
@@ -950,10 +1038,10 @@
         }
 
         // Calculate Days Pending
-        function calculateDaysPending(saleDate) {
-            const today = new Date();
+        function calculateDaysPending(saleDate, endDate = null) {
+            const end = endDate ? new Date(endDate) : new Date();
             const sale = new Date(saleDate);
-            const diffTime = Math.abs(today - sale);
+            const diffTime = Math.abs(end - sale);
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
             return diffDays;
         }
@@ -1004,8 +1092,8 @@
                                     ${daysPending > 0 ? `<span class="days-badge ${daysPending > 30 ? 'danger' : 'warning'}">${daysPending} days pending</span>` : ''}
                                 </div>
                             </div>
-                            <button class="btn btn-primary" onclick="event.stopPropagation(); viewCustomerInvoice(${customer.id})">
-                                📄 Generate Statement
+                            <button class="btn btn-primary" onclick="event.stopPropagation(); viewCustomerDetails('${customer.id}')">
+                                👁️ View Details
                             </button>
                         </div>
                     `;
@@ -1037,11 +1125,9 @@
                                 ₹${balance.toFixed(2)}
                             </div>
                         </div>
-                        ${balance > 0 ? `
-                            <button class="btn btn-primary" onclick="viewCustomerInvoice(${customer.id})">
-                                📄 View Statement
-                            </button>
-                        ` : '<div style="color: var(--success-color); font-weight: 600; margin-top: 10px;">✓ No Pending Balance</div>'}
+                        <button class="btn btn-primary" onclick="viewCustomerDetails('${customer.id}')">
+                            👁️ View Details
+                        </button>
                     </div>
                 `;
             }).join('');
@@ -1076,11 +1162,9 @@
                                 ₹${balance.toFixed(2)}
                             </div>
                         </div>
-                        ${balance > 0 ? `
-                            <button class="btn btn-primary" onclick="viewCustomerInvoice(${customer.id})">
-                                📄 View Statement
-                            </button>
-                        ` : '<div style="color: var(--success-color); font-weight: 600; margin-top: 10px;">✓ No Pending Balance</div>'}
+                        <button class="btn btn-primary" onclick="viewCustomerDetails('${customer.id}'); event.stopPropagation();">
+                            👁️ View Details
+                        </button>
                     </div>
                 `;
             }).join('');
@@ -1099,19 +1183,68 @@
             paymentSelect.innerHTML = '<option value="">-- Choose Customer --</option>' + options;
         }
 
-        // View Customer Invoice
-        function viewCustomerInvoice(customerId) {
-            const customer = customers.find(c => c.id === customerId);
-            if (!customer) return;
-
-            currentInvoiceCustomer = customer;
-            const unpaidSales = getCustomerUnpaidSales(customerId);
-            const totalBalance = calculateCustomerBalance(customerId);
-
-            if (unpaidSales.length === 0) {
-                alert('This customer has no pending balance.');
+        // Search Customer
+        function searchCustomer() {
+            const searchTerm = document.getElementById('searchCustomerInput').value.toLowerCase().trim();
+            const resultsDiv = document.getElementById('searchResults');
+            
+            if (!searchTerm) {
+                resultsDiv.innerHTML = '<p style="text-align: center; color: #666; padding: 40px;">Enter customer name or phone number to search</p>';
                 return;
             }
+
+            const filtered = customers.filter(customer => 
+                customer.name.toLowerCase().includes(searchTerm) || 
+                customer.phone.includes(searchTerm)
+            );
+
+            if (filtered.length === 0) {
+                resultsDiv.innerHTML = '<p style="text-align: center; color: #666; padding: 40px;">No customers found</p>';
+                return;
+            }
+
+            resultsDiv.innerHTML = filtered.map(customer => {
+                const balance = calculateCustomerBalance(customer.id);
+                return `
+                    <div class="customer-card">
+                        <div class="customer-header">
+                            <div>
+                                <div class="customer-name">${customer.name}</div>
+                                <div class="customer-info">📞 ${customer.phone}</div>
+                                ${customer.address ? `<div class="customer-info">📍 ${customer.address}</div>` : ''}
+                            </div>
+                            <div class="balance ${balance > 0 ? 'pending' : 'clear'}">
+                                ₹${balance.toFixed(2)}
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" onclick="viewCustomerDetails('${customer.id}'); event.stopPropagation();">
+                            👁️ View Full Details
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // View Customer Details
+        function viewCustomerDetails(customerId) {
+            const customer = customers.find(c => c.id === customerId || c.id === parseInt(customerId) || c.id === String(customerId));
+            if (!customer) {
+                console.error('Customer not found:', customerId);
+                alert('Customer not found!');
+                return;
+            }
+
+            currentInvoiceCustomer = customer;
+            
+            // Get all transactions for this customer
+            const customerTransactions = transactions
+                .filter(t => t.customerId === customerId || t.customerId === parseInt(customerId) || t.customerId === String(customerId))
+                .sort((a, b) => new Date(a.date) - new Date(b.date));
+            
+            const sales = customerTransactions.filter(t => t.type === 'sale');
+            const payments = customerTransactions.filter(t => t.type === 'payment');
+            const unpaidSales = sales.filter(s => !s.isPaid);
+            const totalBalance = calculateCustomerBalance(customerId);
 
             const invoiceHTML = `
                 <div class="invoice-header">
@@ -1137,38 +1270,75 @@
                     ${customer.address ? `<div><strong>Address:</strong> ${customer.address}</div>` : ''}
                 </div>
 
-                <h3 style="margin-bottom: 15px; color: var(--primary-color);">Outstanding Purchases</h3>
-                <table class="outstanding-table">
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Description</th>
-                            <th>Qty</th>
-                            <th>Rate</th>
-                            <th>Amount</th>
-                            <th>Days Pending</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${unpaidSales.map(sale => {
-                            const daysPending = calculateDaysPending(sale.date);
-                            return `
+                <h3 style="margin-bottom: 15px; color: var(--primary-color);">All Transactions</h3>
+                
+                ${sales.length > 0 ? `
+                    <h4 style="margin-top: 20px; margin-bottom: 10px; color: var(--primary-color);">📦 Sales</h4>
+                    <table class="outstanding-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Description</th>
+                                <th>Qty</th>
+                                <th>Rate</th>
+                                <th>Amount</th>
+                                <th>Status</th>
+                                <th>Days</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${sales.map(sale => {
+                                const daysPending = sale.isPaid ? 
+                                    (sale.paidDate ? calculateDaysPending(sale.date, sale.paidDate) : 0) :
+                                    calculateDaysPending(sale.date);
+                                return `
+                                    <tr>
+                                        <td>${new Date(sale.date).toLocaleDateString('en-IN')}</td>
+                                        <td>${sale.description}</td>
+                                        <td>${sale.quantity}</td>
+                                        <td>₹${sale.rate.toFixed(2)}</td>
+                                        <td><strong>₹${sale.amount.toFixed(2)}</strong></td>
+                                        <td>
+                                            ${sale.isPaid ? 
+                                                '<span style="color: var(--success-color); font-weight: 600;">✓ Paid</span>' : 
+                                                '<span style="color: var(--danger-color); font-weight: 600;">⚠ Unpaid</span>'
+                                            }
+                                        </td>
+                                        <td>
+                                            <span class="days-badge ${daysPending > 30 ? 'danger' : 'warning'}">
+                                                ${daysPending} days
+                                            </span>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                ` : '<p style="color: #666;">No sales recorded</p>'}
+
+                ${payments.length > 0 ? `
+                    <h4 style="margin-top: 25px; margin-bottom: 10px; color: var(--primary-color);">💰 Payments</h4>
+                    <table class="outstanding-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Amount</th>
+                                <th>Mode</th>
+                                <th>Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${payments.map(payment => `
                                 <tr>
-                                    <td>${new Date(sale.date).toLocaleDateString('en-IN')}</td>
-                                    <td>${sale.description}</td>
-                                    <td>${sale.quantity}</td>
-                                    <td>₹${sale.rate.toFixed(2)}</td>
-                                    <td><strong>₹${sale.amount.toFixed(2)}</strong></td>
-                                    <td>
-                                        <span class="days-badge ${daysPending > 30 ? 'danger' : 'warning'}">
-                                            ${daysPending} days
-                                        </span>
-                                    </td>
+                                    <td>${new Date(payment.date).toLocaleDateString('en-IN')}</td>
+                                    <td style="color: var(--success-color); font-weight: 600;">₹${payment.amount.toFixed(2)}</td>
+                                    <td>${payment.mode}</td>
+                                    <td>${payment.notes || '-'}</td>
                                 </tr>
-                            `;
-                        }).join('')}
-                    </tbody>
-                </table>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                ` : '<p style="color: #666; margin-top: 25px;">No payments recorded</p>'}
 
                 <div class="total-section">
                     <div style="font-size: 1.2em; margin-bottom: 10px;">Total Outstanding Balance</div>
@@ -1219,33 +1389,6 @@
                 alert('Error generating PDF. Please try again.');
                 console.error(error);
             }
-        }
-
-        // Share via WhatsApp
-        async function shareWhatsApp() {
-            if (!currentInvoiceCustomer) return;
-            
-            const phone = currentInvoiceCustomer.phone;
-            const balance = calculateCustomerBalance(currentInvoiceCustomer.id);
-            const unpaidSales = getCustomerUnpaidSales(currentInvoiceCustomer.id);
-            
-            let message = `*Sri Lakshmi Saree Center*\n`;
-            message += `Statement for: ${currentInvoiceCustomer.name}\n\n`;
-            message += `*Outstanding Purchases:*\n`;
-            
-            unpaidSales.forEach(sale => {
-                const days = calculateDaysPending(sale.date);
-                message += `📅 ${new Date(sale.date).toLocaleDateString('en-IN')}\n`;
-                message += `   ${sale.description} - ₹${sale.amount.toFixed(2)}\n`;
-                message += `   (${days} days pending)\n\n`;
-            });
-            
-            message += `*Total Balance: ₹${balance.toFixed(2)}*\n\n`;
-            message += `Thank you for your business!\n`;
-            message += `📞 +91-9490987655, 9441906269`;
-            
-            const whatsappURL = `https://wa.me/91${phone}?text=${encodeURIComponent(message)}`;
-            window.open(whatsappURL, '_blank');
         }
 
         // Generate Report
@@ -1371,10 +1514,10 @@
             return words.trim();
         }
 
-        // Save Data
-        function saveData() {
-            localStorage.setItem('customers', JSON.stringify(customers));
-            localStorage.setItem('transactions', JSON.stringify(transactions));
+        // Save Data - Not needed as Firebase auto-saves
+        async function saveData() {
+            // Firebase saves happen in real-time in individual functions
+            console.log('✅ Data synced with Firebase');
         }
 
         // Initialize on load
@@ -1383,26 +1526,5 @@
             initializeSampleData();
         };
     </script>
-    <!-- Firebase (CDN version for browser) -->
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
-
-<script>
-  // 🔹 Paste your Firebase config values here
-  const firebaseConfig = {
-    apiKey: "AIzaSyAEtIc_E57ep6Ii5VdY6ojCowID9q0@m~s",
-    authDomain: "creditmanagementsystem-5cb28.firebaseapp.com",
-    projectId: "creditmanagementsystem-5cb28",
-    storageBucket: "creditmanagementsystem-5cb28.appspot.com",
-    messagingSenderId: "815041719718",
-    appId: "1:815041719718:web:c77949e9ce14ccd2ceb367"
-  };
-
-  // 🔹 Initialize Firebase and Firestore
-  firebase.initializeApp(firebaseConfig);
-  const db = firebase.firestore();
-
-  console.log("✅ Firebase connected!");
-</script>
 </body>
 </html>
