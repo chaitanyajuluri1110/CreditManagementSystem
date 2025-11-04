@@ -1383,5 +1383,26 @@
             initializeSampleData();
         };
     </script>
+    <!-- Firebase (CDN version for browser) -->
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+<script>
+  // 🔹 Paste your Firebase config values here
+  const firebaseConfig = {
+    apiKey: "AIzaSyAEtIc_E57ep6Ii5VdY6ojCowID9q0@m~s",
+    authDomain: "creditmanagementsystem-5cb28.firebaseapp.com",
+    projectId: "creditmanagementsystem-5cb28",
+    storageBucket: "creditmanagementsystem-5cb28.appspot.com",
+    messagingSenderId: "815041719718",
+    appId: "1:815041719718:web:c77949e9ce14ccd2ceb367"
+  };
+
+  // 🔹 Initialize Firebase and Firestore
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+
+  console.log("✅ Firebase connected!");
+</script>
 </body>
 </html>
